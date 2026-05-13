@@ -10,7 +10,7 @@ find_package(ament_cmake REQUIRED)
 find_package(xacro REQUIRED)
 
 install(
-  DIRECTORY urdf launch rviz
+  DIRECTORY urdf launch rviz config world
   DESTINATION share/${PROJECT_NAME}
 )
 
