@@ -49,8 +49,15 @@ def generate_launch_description():
             'world': 'my_world',
             'topic': '/robot_description',
             'entity_name': 'sambot',
-            'z': '0.65',
+            'z': '0.15',
         }.items(),
+    )
+    robot_localization_node = Node(
+    package='robot_localization',
+    executable='ekf_node',
+    name='ekf_filter_node',
+    output='screen',
+    parameters=[os.path.join(pkg_share, 'config/ekf.yaml'), {'use_sim_time': LaunchConfiguration('use_sim_time')}]
     )
 
     return LaunchDescription([
@@ -59,8 +66,9 @@ def generate_launch_description():
         DeclareLaunchArgument(name='rvizconfig', default_value=default_rviz_config_path, description='Absolute path to rviz config file'),
         ExecuteProcess(cmd=['gz', 'sim', '-g'], output='screen'),
         robot_state_publisher_node,
-        rviz_node,
         gz_server,
         ros_gz_bridge,
         spawn_entity,
+        robot_localization_node, # above the rviz_node so that it starts before rviz
+        rviz_node,
     ])
