@@ -1,0 +1,498 @@
+# Nav2 parameter file for Sambot (differential drive, simulation).
+# Used with: ros2 launch nav2_bringup navigation_launch.py use_sim_time:=true params_file:=<this file>
+#
+# Coordinate frames used by this robot:
+#   map      — global frame, provided by SLAM Toolbox or AMCL
+#   odom     — local continuous frame, provided by robot_localization EKF
+#   base_link — robot body; base_footprint is directly below at ground level
+#
+# Key topic remaps vs Nav2 defaults:
+#   /cmd_vel      → /demo/cmd_vel   (via collision_monitor cmd_vel_out_topic)
+#   /odom         → /demo/odom      (raw Gazebo odometry, used for monitoring)
+#   /scan         → /scan           (2D LiDAR via ros_gz_bridge)
+
+amcl:
+  ros__parameters:
+    # AMCL is used for localization against a known map (navigation_launch.py).
+    # It is NOT used during pure SLAM mapping (slam_toolbox replaces it then).
+    # Particle filter motion model noise — higher values = more spread on motion.
+    alpha1: 0.2   # rotation noise from rotation
+    alpha2: 0.2   # rotation noise from translation
+    alpha3: 0.2   # translation noise from translation
+    alpha4: 0.2   # translation noise from rotation
+    alpha5: 0.2   # strafe noise (ignored for DifferentialMotionModel)
+    base_frame_id: "base_footprint"
+    beam_skip_distance: 0.5
+    beam_skip_error_threshold: 0.9
+    beam_skip_threshold: 0.3
+    do_beamskip: false
+    global_frame_id: "map"
+    lambda_short: 0.1
+    laser_likelihood_max_dist: 2.0
+    laser_max_range: 100.0
+    laser_min_range: -1.0
+    laser_model_type: "likelihood_field"
+    max_beams: 60
+    max_particles: 2000
+    min_particles: 500
+    odom_frame_id: "odom"
+    pf_err: 0.05
+    pf_z: 0.99
+    recovery_alpha_fast: 0.0
+    recovery_alpha_slow: 0.0
+    resample_interval: 1
+    robot_model_type: "nav2_amcl::DifferentialMotionModel"
+    save_pose_rate: 0.5
+    sigma_hit: 0.2
+    tf_broadcast: true
+    transform_tolerance: 1.0
+    update_min_a: 0.2
+    update_min_d: 0.25
+    z_hit: 0.5
+    z_max: 0.05
+    z_rand: 0.5
+    z_short: 0.05
+    scan_topic: scan
+
+bt_navigator:
+  ros__parameters:
+    global_frame: map
+    robot_base_frame: base_link
+    # Raw Gazebo odometry used for BT Navigator monitoring/status only.
+    # Nav2 uses the TF tree (odom→base_link from EKF) for actual pose tracking.
+    odom_topic: /demo/odom
+    bt_loop_duration: 10
+    default_server_timeout: 20
+    wait_for_service_timeout: 1000
+    action_server_result_timeout: 900.0
+    navigators: ["navigate_to_pose", "navigate_through_poses"]
+    navigate_to_pose:
+      plugin: "nav2_bt_navigator::NavigateToPoseNavigator"
+    navigate_through_poses:
+      plugin: "nav2_bt_navigator::NavigateThroughPosesNavigator"
+    # Default BT XMLs used (from nav2_bt_navigator package):
+    #   navigate_to_pose_w_replanning_and_recovery.xml
+    #   navigate_through_poses_w_replanning_and_recovery.xml
+    # Override with default_nav_to_pose_bt_xml / default_nav_through_poses_bt_xml.
+
+    error_code_names:
+      - compute_path_error_code
+      - follow_path_error_code
+
+controller_server:
+  ros__parameters:
+    controller_frequency: 20.0
+    costmap_update_timeout: 0.30
+    # Thresholds below which a velocity component is treated as "stopped".
+    # For a diff-drive robot vy is always ~0, so keep this small to avoid
+    # masking real (error) lateral velocities.
+    min_x_velocity_threshold: 0.001
+    min_y_velocity_threshold: 0.001
+    min_theta_velocity_threshold: 0.001
+    failure_tolerance: 0.3
+    progress_checker_plugins: ["progress_checker"]
+    goal_checker_plugins: ["general_goal_checker"]
+    controller_plugins: ["FollowPath"]
+    # Same note as bt_navigator: raw odom is used for monitoring only;
+    # the TF tree drives actual pose tracking.
+    odom_topic: /demo/odom
+    use_realtime_priority: false
+    # Must be true because collision_monitor outputs TwistStamped on cmd_vel_smoothed
+    # and the DiffDrive plugin expects TwistStamped on /demo/cmd_vel.
+    enable_stamped_cmd_vel: true
+
+    # Progress checker — robot must move at least 0.5 m within 10 s or recovery triggers.
+    progress_checker:
+      plugin: "nav2_controller::SimpleProgressChecker"
+      required_movement_radius: 0.5
+      movement_time_allowance: 10.0
+
+    general_goal_checker:
+      stateful: True
+      plugin: "nav2_controller::SimpleGoalChecker"
+      xy_goal_tolerance: 0.25
+      yaw_goal_tolerance: 0.25
+
+    # ── MPPI Controller ───────────────────────────────────────────────────────
+    # Model Predictive Path Integral controller. Samples thousands of random
+    # trajectories, weights them by cost, and computes an optimal control.
+    # Good default for differential drive; tune batch_size / time_steps for
+    # a balance between quality and CPU load.
+    FollowPath:
+      plugin: "nav2_mppi_controller::MPPIController"
+      time_steps: 56          # planning horizon in steps (56 * 0.05 s = 2.8 s)
+      model_dt: 0.05          # simulation step size (s)
+      batch_size: 2000        # number of sampled trajectories per iteration
+      ax_max: 3.0             # max forward jerk (m/s²/s)
+      ax_min: -3.0
+      ay_max: 3.0
+      az_max: 3.5
+      vx_std: 0.2             # noise std for forward velocity sampling
+      vy_std: 0.2
+      wz_std: 0.4             # noise std for yaw rate sampling
+      vx_max: 0.5             # max forward speed (m/s) — matches velocity_smoother
+      vx_min: -0.35           # allow limited reverse
+      vy_max: 0.5             # unused for DiffDrive (robot cannot strafe)
+      wz_max: 1.9             # max yaw rate (rad/s)
+      iteration_count: 1
+      prune_distance: 1.7
+      transform_tolerance: 0.1
+      temperature: 0.3
+      gamma: 0.015
+      motion_model: "DiffDrive"
+      visualize: true
+      regenerate_noises: true
+      TrajectoryVisualizer:
+        trajectory_step: 5
+        time_step: 3
+      # AckermannConstraints is only applied when motion_model = "Ackermann".
+      # Left here as a reference — it has no effect for DiffDrive.
+      AckermannConstraints:
+        min_turning_r: 0.2
+      critics: [
+        "ConstraintCritic", "CostCritic", "GoalCritic",
+        "GoalAngleCritic", "PathAlignCritic", "PathFollowCritic",
+        "PathAngleCritic", "PreferForwardCritic"]
+      ConstraintCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 4.0
+      GoalCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 5.0
+        threshold_to_consider: 1.4
+      GoalAngleCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 3.0
+        threshold_to_consider: 0.5
+      PreferForwardCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 5.0
+        threshold_to_consider: 0.5
+      CostCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 3.81
+        critical_cost: 300.0
+        consider_footprint: true
+        collision_cost: 1000000.0
+        near_goal_distance: 1.0
+        trajectory_point_step: 2
+      PathAlignCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 14.0
+        max_path_occupancy_ratio: 0.05
+        trajectory_point_step: 4
+        threshold_to_consider: 0.5
+        offset_from_furthest: 20
+        use_path_orientations: false
+      PathFollowCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 5.0
+        offset_from_furthest: 5
+        threshold_to_consider: 1.4
+      PathAngleCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 2.0
+        offset_from_furthest: 4
+        threshold_to_consider: 0.5
+        max_angle_to_furthest: 1.0
+        mode: 0
+      # TwirlingCritic penalises excessive rotation-in-place; enable if the
+      # robot spins too much when approaching a goal.
+      # TwirlingCritic:
+      #   enabled: true
+      #   twirling_cost_power: 1
+      #   twirling_cost_weight: 10.0
+
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      update_frequency: 5.0
+      publish_frequency: 2.0
+      global_frame: odom        # local costmap moves with the robot in odom frame
+      robot_base_frame: base_link
+      rolling_window: true      # costmap follows the robot, not the map origin
+      width: 3                  # metres — covers ~1.5 m in each direction
+      height: 3
+      resolution: 0.05          # 5 cm/cell
+      # Rectangular footprint matching the base_link box (half-lengths ±0.21, ±0.195).
+      # Used by the controller and inflation layer for collision checking.
+      footprint: "[ [0.21, 0.195], [0.21, -0.195], [-0.21, -0.195], [-0.21, 0.195] ]"
+      # voxel_layer: builds a 3-D voxel grid from the LiDAR scan, then projects
+      #              it down to a 2-D obstacle map for the local planner.
+      # inflation_layer: inflates obstacles by inflation_radius so the robot
+      #                  body never touches them.
+      # static_layer is intentionally excluded here — the local costmap uses a
+      # rolling window and does not need the static map. Add it back if you want
+      # the local planner to respect mapped walls even when out of sensor range.
+      plugins: ["voxel_layer", "inflation_layer"]
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 3.0    # exponential decay; higher = steeper cost gradient
+        inflation_radius: 0.55      # must be ≥ robot inscribed radius (~0.30 m) + safety margin
+      voxel_layer:
+        plugin: "nav2_costmap_2d::VoxelLayer"
+        enabled: True
+        publish_voxel_map: True     # publishes a PointCloud2 for RViz debug
+        origin_z: 0.0
+        z_resolution: 0.05
+        z_voxels: 16                # 16 * 0.05 = 0.8 m tall voxel column
+        max_obstacle_height: 2.0
+        mark_threshold: 0
+        observation_sources: scan
+        scan:
+          topic: /scan
+          max_obstacle_height: 2.0
+          clearing: True            # ray-cast through free space to clear stale obstacles
+          marking: True
+          data_type: "LaserScan"
+          raytrace_max_range: 3.0
+          raytrace_min_range: 0.0
+          obstacle_max_range: 2.5
+          obstacle_min_range: 0.0
+      # static_layer config below is defined for reference but is NOT in the
+      # plugins list above. Add "static_layer" to plugins to enable it.
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_subscribe_transient_local: True
+      always_send_full_costmap: True
+
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      update_frequency: 1.0
+      publish_frequency: 1.0
+      global_frame: map         # global costmap is anchored to the map frame
+      robot_base_frame: base_link
+      # robot_radius is used when no explicit footprint is set.
+      # Approximates the Sambot bounding circle (half-diagonal ≈ 0.26 m + margin).
+      robot_radius: 0.3
+      resolution: 0.05
+      track_unknown_space: true # treat unseen cells as unknown, not free
+      # static_layer: subscribes to /map (from SLAM Toolbox or map_server).
+      # obstacle_layer: marks real-time LiDAR hits on top of the static map.
+      # inflation_layer: inflates all obstacles so the planner keeps clearance.
+      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: True
+        observation_sources: scan
+        scan:
+          topic: /scan
+          max_obstacle_height: 2.0
+          clearing: True
+          marking: True
+          data_type: "LaserScan"
+          raytrace_max_range: 3.0
+          raytrace_min_range: 0.0
+          obstacle_max_range: 2.5
+          obstacle_min_range: 0.0
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_subscribe_transient_local: True
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 3.0
+        inflation_radius: 0.55
+      always_send_full_costmap: True
+
+# map_server is configured by navigation_launch.py from its own arguments.
+# Uncomment and set yaml_filename to load a pre-built map without the launch arg.
+# map_server:
+#   ros__parameters:
+#     yaml_filename: ""
+
+map_saver:
+  ros__parameters:
+    save_map_timeout: 5.0
+    free_thresh_default: 0.25
+    occupied_thresh_default: 0.65
+    map_subscribe_transient_local: True
+
+planner_server:
+  ros__parameters:
+    expected_planner_frequency: 20.0
+    planner_plugins: ["GridBased"]
+    costmap_update_timeout: 1.0
+    GridBased:
+      # NavFn uses Dijkstra (use_astar: false) or A* (use_astar: true).
+      # Dijkstra finds the true shortest path; A* is faster but uses a heuristic.
+      plugin: "nav2_navfn_planner::NavfnPlanner"
+      tolerance: 0.5
+      use_astar: false
+      allow_unknown: true   # plan through unknown cells (needed during SLAM)
+
+smoother_server:
+  ros__parameters:
+    smoother_plugins: ["simple_smoother"]
+    simple_smoother:
+      plugin: "nav2_smoother::SimpleSmoother"
+      tolerance: 1.0e-10
+      max_its: 1000
+      do_refinement: True
+
+behavior_server:
+  ros__parameters:
+    local_costmap_topic: local_costmap/costmap_raw
+    global_costmap_topic: global_costmap/costmap_raw
+    local_footprint_topic: local_costmap/published_footprint
+    global_footprint_topic: global_costmap/published_footprint
+    cycle_frequency: 10.0
+    # Recovery behaviours executed when the robot gets stuck:
+    #   spin           — rotate in place to clear local costmap
+    #   backup         — drive backwards
+    #   drive_on_heading — drive forward (use cautiously)
+    #   wait           — pause and wait for the path to clear
+    #   assisted_teleop — yield control to a human operator
+    behavior_plugins: ["spin", "backup", "drive_on_heading", "assisted_teleop", "wait"]
+    spin:
+      plugin: "nav2_behaviors::Spin"
+    backup:
+      plugin: "nav2_behaviors::BackUp"
+    drive_on_heading:
+      plugin: "nav2_behaviors::DriveOnHeading"
+    wait:
+      plugin: "nav2_behaviors::Wait"
+    assisted_teleop:
+      plugin: "nav2_behaviors::AssistedTeleop"
+    local_frame: odom
+    global_frame: map
+    robot_base_frame: base_link
+    transform_tolerance: 0.1
+    simulate_ahead_time: 2.0
+    max_rotational_vel: 1.0
+    min_rotational_vel: 0.4
+    rotational_acc_lim: 3.2
+    enable_stamped_cmd_vel: true
+
+waypoint_follower:
+  ros__parameters:
+    loop_rate: 20
+    stop_on_failure: false
+    action_server_result_timeout: 900.0
+    waypoint_task_executor_plugin: "wait_at_waypoint"
+    wait_at_waypoint:
+      plugin: "nav2_waypoint_follower::WaitAtWaypoint"
+      enabled: True
+      waypoint_pause_duration: 200   # ms to pause at each waypoint
+
+velocity_smoother:
+  ros__parameters:
+    smoothing_frequency: 20.0
+    scale_velocities: False
+    feedback: "OPEN_LOOP"   # "CLOSED_LOOP" requires odometry; use OPEN_LOOP for simplicity
+    max_velocity: [0.5, 0.0, 2.0]    # [vx, vy, wz] — vy=0 because diff-drive
+    min_velocity: [-0.5, 0.0, -2.0]
+    max_accel: [2.5, 0.0, 3.2]
+    max_decel: [-2.5, 0.0, -3.2]
+    odom_topic: "/demo/odom"
+    odom_duration: 0.1
+    deadband_velocity: [0.0, 0.0, 0.0]
+    velocity_timeout: 1.0
+    enable_stamped_cmd_vel: true
+
+collision_monitor:
+  ros__parameters:
+    base_frame_id: "base_footprint"
+    odom_frame_id: "odom"
+    # cmd_vel pipeline:
+    #   controller_server → cmd_vel_smoothed (velocity_smoother output)
+    #   collision_monitor  → /demo/cmd_vel   (Gazebo DiffDrive input)
+    cmd_vel_in_topic: "cmd_vel_smoothed"
+    cmd_vel_out_topic: "/demo/cmd_vel"
+    enable_stamped_cmd_vel: true
+    state_topic: "collision_monitor_state"
+    transform_tolerance: 0.2
+    source_timeout: 1.0
+    base_shift_correction: True
+    stop_pub_timeout: 2.0
+    # FootprintApproach: slow/stop the robot when a collision is imminent within
+    # time_before_collision seconds. Uses the published footprint polygon.
+    polygons: ["FootprintApproach"]
+    FootprintApproach:
+      type: "polygon"
+      action_type: "approach"
+      footprint_topic: "local_costmap/published_footprint"
+      time_before_collision: 1.2
+      simulation_time_step: 0.1
+      min_points: 6
+      visualize: False
+      enabled: True
+    observation_sources: ["scan"]
+    scan:
+      type: "scan"
+      topic: "scan"
+      # min_height filters ground reflections. The LiDAR is at ~0.27 m above
+      # the ground (base spawned at z=0.15 m + lidar_joint z=0.12 m).
+      min_height: 0.15
+      max_height: 2.0
+      enabled: True
+
+# docking_server — included for reference to show Nav2 docking capability.
+# Sambot does not have a physical dock; the dock_plugins list is populated
+# but no dock instances are configured. Remove or add dock instances as needed.
+docking_server:
+  ros__parameters:
+    controller_frequency: 50.0
+    initial_perception_timeout: 5.0
+    wait_charge_timeout: 5.0
+    dock_approach_timeout: 30.0
+    undock_linear_tolerance: 0.05
+    undock_angular_tolerance: 0.1
+    max_retries: 3
+    base_frame: "base_link"
+    fixed_frame: "odom"
+    dock_backwards: false
+    dock_prestaging_tolerance: 0.5
+    dock_plugins: ['simple_charging_dock']
+    simple_charging_dock:
+      plugin: 'opennav_docking::SimpleChargingDock'
+      docking_threshold: 0.05
+      staging_x_offset: -0.7
+      use_external_detection_pose: true
+      use_battery_status: false
+      use_stall_detection: false
+      external_detection_timeout: 1.0
+      external_detection_translation_x: -0.18
+      external_detection_translation_y: 0.0
+      external_detection_rotation_roll: -1.57
+      external_detection_rotation_pitch: -1.57
+      external_detection_rotation_yaw: 0.0
+      filter_coef: 0.1
+    # Uncomment and fill in to register dock locations on the map:
+    # docks: ['home_dock']
+    # home_dock:
+    #   type: 'simple_charging_dock'
+    #   frame: map
+    #   pose: [0.0, 0.0, 0.0]
+    controller:
+      k_phi: 3.0
+      k_delta: 2.0
+      v_linear_min: 0.15
+      v_linear_max: 0.15
+      use_collision_detection: true
+      costmap_topic: "/local_costmap/costmap_raw"
+      footprint_topic: "/local_costmap/published_footprint"
+      transform_tolerance: 0.1
+      projection_time: 5.0
+      simulation_step: 0.1
+      dock_collision_threshold: 0.3
+
+# loopback_simulator — a software-only fake robot used when you want to test
+# Nav2 without Gazebo. Not used in the Sambot Gazebo workflow.
+# scan_frame_id must match the robot's actual LiDAR frame (lidar_link for Sambot).
+loopback_simulator:
+  ros__parameters:
+    base_frame_id: "base_footprint"
+    odom_frame_id: "odom"
+    map_frame_id: "map"
+    scan_frame_id: "lidar_link"   # matches sambot_odometry_sensors.sdf lidar_link
+    update_duration: 0.02
+    enable_stamped_cmd_vel: true

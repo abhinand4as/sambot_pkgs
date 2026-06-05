@@ -1,45 +1,64 @@
 ### ekf config file ###
+# robot_localization EKF node fuses wheel odometry and IMU to produce a
+# smooth, continuous odom→base_link transform on /odometry/filtered.
+# The Gazebo DiffDrive plugin also broadcasts odom→base_link via /tf, but
+# that bridge is intentionally disabled in bridge_config.yaml so that this
+# EKF owns the transform exclusively.
 ekf_filter_node:
     ros__parameters:
-# The frequency, in Hz, at which the filter will output a position estimate. Note that the filter will not begin
-# computation until it receives at least one message from one of the inputs. It will then run continuously at the
-# frequency specified here, regardless of whether it receives more measurements. Defaults to 30 if unspecified.
+        # Output rate of the filtered pose estimate (Hz).
+        # Higher = smoother but more CPU. 30 Hz matches the IMU-dominant sources.
         frequency: 30.0
 
-# ekf_localization_node and ukf_localization_node both use a 3D omnidirectional motion model. If this parameter is
-# set to true, no 3D information will be used in your state estimate. Use this if you are operating in a planar
-# environment and want to ignore the effect of small variations in the ground plane that might otherwise be detected
-# by, for example, an IMU. Defaults to false if unspecified.
-        two_d_mode: false
+        # Set true for robots that operate on a flat floor (2D motion only).
+        # This ignores small Z/roll/pitch variations (e.g. from an IMU sensing
+        # gravity components) and produces a cleaner XY + yaw estimate.
+        # Sambot is a ground robot so this must be true.
+        two_d_mode: true
 
-# Whether to publish the acceleration state. Defaults to false if unspecified.
+        # Publish linear acceleration in the output Odometry message.
         publish_acceleration: true
 
-# Whether to broadcast the transformation over the /tf topic. Defaults to true if unspecified.
+        # Broadcast the odom→base_link transform on /tf.
+        # Set false if another node (e.g. AMCL) should own this transform.
         publish_tf: true
 
-# 1. Set the map_frame, odom_frame, and base_link frames to the appropriate frame names for your system.
-#     1a. If your system does not have a map_frame, just remove it, and make sure "world_frame" is set to the value of odom_frame.
-# 2. If you are fusing continuous position data such as wheel encoder odometry, visual odometry, or IMU data, set "world_frame"
-#    to your odom_frame value. This is the default behavior for robot_localization's state estimation nodes.
-# 3. If you are fusing global absolute position data that is subject to discrete jumps (e.g., GPS or position updates from landmark
-#    observations) then:
-#     3a. Set your "world_frame" to your map_frame value
-#     3b. MAKE SURE something else is generating the odom->base_link transform. Note that this can even be another state estimation node
-#         from robot_localization! However, that instance should *not* fuse the global data.
+        # Frame definitions.
+        # world_frame = odom_frame → continuous dead-reckoning mode (no global
+        # corrections). SLAM/AMCL supplies the map→odom jump separately.
+        # To use a GPS or global pose source, set world_frame: map and run a
+        # second EKF instance for the odom→base_link leg.
         map_frame: map              # Defaults to "map" if unspecified
         odom_frame: odom            # Defaults to "odom" if unspecified
         base_link_frame: base_link  # Defaults to "base_link" if unspecified
         world_frame: odom           # Defaults to the value of odom_frame if unspecified
 
-        odom0: demo/odom
+        # ── Odometry source ──────────────────────────────────────────────────
+        # /demo/odom is the raw wheel odometry from the Gazebo DiffDrive plugin,
+        # bridged to ROS via ros_gz_bridge (see bridge_config.yaml).
+        odom0: /demo/odom
+        # State vector columns: [x, y, z, roll, pitch, yaw, vx, vy, vz, vroll, vpitch, vyaw, ax, ay, az]
+        # We fuse:
+        #   vx    (forward velocity)        — primary locomotion signal
+        #   vy    (lateral velocity, ~0)    — fusing zero keeps the EKF from
+        #                                     drifting sideways in simulation
+        #   vyaw  (yaw rate)                — differential drive turning
+        # Absolute x/y positions are NOT fused from odometry to avoid double-
+        # counting: the EKF integrates velocity internally.
         odom0_config: [false, false, false,
-                      false, false, false,
-                      true, true, false,
-                      false, false, true,
-                      false, false, false]
+                       false, false, false,
+                       true,  true,  false,
+                       false, false, true,
+                       false, false, false]
 
-        imu0: demo/imu
+        # ── IMU source ───────────────────────────────────────────────────────
+        # /demo/imu is published by the Gazebo IMU sensor on imu_link at 100 Hz.
+        imu0: /demo/imu
+        # We only fuse vyaw (z angular velocity) from the IMU.
+        # - Orientation is excluded because two_d_mode=true already constrains
+        #   roll/pitch, and sim-IMU yaw adds noise relative to odometry.
+        # - Linear acceleration is excluded to keep the filter simple; enable
+        #   ax/ay here if you want the EKF to estimate slip or external forces.
         imu0_config: [false, false, false,
                       false, false, false,
                       false, false, false,

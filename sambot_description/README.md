@@ -205,6 +205,55 @@ All sensor data is forwarded from Gazebo to ROS via `bridge_config.yaml`:
 
 ---
 
+## Mapping and Localization with Nav2
+
+This example runs SLAM-based mapping alongside the Nav2 navigation stack so you can observe the global and local costmaps being built in real time.
+
+Each command runs in its own terminal (source `install/setup.bash` in each).
+
+### Terminal 1 — Simulation
+
+Launch Gazebo with the sensor-equipped robot and open RViz with the sensor layout:
+
+```bash
+ros2 launch sambot_description gazebo_display.launch.py \
+  rvizconfig:=/home/abhinandas/ws/robotics/ros2/nav2_ws/src/sambot_pkgs/sambot_description/rviz/sensor_config.rviz
+```
+
+Starts Gazebo, spawns Sambot, brings up the ROS–Gazebo bridge, EKF, and RViz pre-configured to display sensor streams (LiDAR, camera, odometry).
+
+### Terminal 2 — SLAM Toolbox (mapping)
+
+```bash
+ros2 launch slam_toolbox online_async_launch.py use_sim_time:=true
+```
+
+Runs SLAM Toolbox in asynchronous online mode. Subscribes to `/scan` and publishes an incrementally built occupancy grid on `/map`, along with the `map → odom` transform needed by Nav2.
+
+### Terminal 3 — Nav2 Navigation Stack
+
+```bash
+ros2 launch nav2_bringup navigation_launch.py \
+  use_sim_time:=true \
+  params_file:=/home/abhinandas/ws/robotics/ros2/nav2_ws/src/sambot_pkgs/sambot_description/config/nav2_params.yaml
+```
+
+Starts the full Nav2 stack (planner, controller, costmap servers, behaviour tree) using the tuned parameters in `config/nav2_params.yaml`. The **global costmap** inflates obstacles on the SLAM map for path planning; the **local costmap** uses live sensor data for reactive obstacle avoidance.
+
+### What to observe in RViz
+
+Add the following displays to watch the costmaps:
+
+| Display | Topic |
+| --- | --- |
+| Map | `/map` |
+| Global costmap | `/global_costmap/costmap` |
+| Local costmap | `/local_costmap/costmap` |
+
+Once all three stacks are running, use the **Nav2 Goal** tool in RViz to send a navigation goal and watch the planner generate a path through the global costmap while the controller tracks it using the local costmap.
+
+---
+
 ## License
 
 Apache 2.0 — see [package.xml](package.xml) for details.

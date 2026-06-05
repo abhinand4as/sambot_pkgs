@@ -29,6 +29,7 @@ def generate_launch_description():
         name='rviz2',
         output='screen',
         arguments=['-d', LaunchConfiguration('rvizconfig')],
+        parameters=[{'use_sim_time': LaunchConfiguration('use_sim_time')}],
     )
     gz_server = GzServer(
         world_sdf_file=world_path,
@@ -43,6 +44,22 @@ def generate_launch_description():
         create_own_container='False',
         use_composition='True',
     )
+    camera_bridge_image = Node(
+        package='ros_gz_image',
+        executable='image_bridge',
+        name='bridge_gz_ros_camera_image',
+        output='screen',
+        parameters=[{'use_sim_time': True}],
+        arguments=['/depth_camera/image'],
+    )
+    camera_bridge_depth = Node(
+        package='ros_gz_image',
+        executable='image_bridge',
+        name='bridge_gz_ros_camera_depth',
+        output='screen',
+        parameters=[{'use_sim_time': True}],
+        arguments=['/depth_camera/depth_image'],
+    )
     spawn_entity = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(gz_spawn_model_launch_source),
         launch_arguments={
@@ -53,11 +70,11 @@ def generate_launch_description():
         }.items(),
     )
     robot_localization_node = Node(
-    package='robot_localization',
-    executable='ekf_node',
-    name='ekf_filter_node',
-    output='screen',
-    parameters=[os.path.join(pkg_share, 'config/ekf.yaml'), {'use_sim_time': LaunchConfiguration('use_sim_time')}]
+        package='robot_localization',
+        executable='ekf_node',
+        name='ekf_filter_node',
+        output='screen',
+        parameters=[os.path.join(pkg_share, 'config/ekf.yaml'), {'use_sim_time': LaunchConfiguration('use_sim_time')}],
     )
 
     return LaunchDescription([
@@ -69,6 +86,8 @@ def generate_launch_description():
         gz_server,
         ros_gz_bridge,
         spawn_entity,
-        robot_localization_node, # above the rviz_node so that it starts before rviz
+        robot_localization_node,
         rviz_node,
+        camera_bridge_image,
+        camera_bridge_depth,
     ])
