@@ -1,0 +1,105 @@
+slam_toolbox:
+  ros__parameters:
+
+    # ── Solver ────────────────────────────────────────────────────────────────
+    solver_plugin: solver_plugins::CeresSolver
+    ceres_linear_solver: SPARSE_NORMAL_CHOLESKY
+    ceres_preconditioner: SCHUR_JACOBI
+    ceres_trust_strategy: LEVENBERG_MARQUARDT
+    ceres_dogleg_type: TRADITIONAL_DOGLEG
+    ceres_loss_function: None
+
+    # ── ROS / Frame Parameters ────────────────────────────────────────────────
+    odom_frame: odom
+    map_frame: map
+    base_frame: base_footprint       # must match Sambot's base frame
+    scan_topic: /scan
+    use_map_saver: true
+    mode: mapping
+
+    # ── Performance ───────────────────────────────────────────────────────────
+    debug_logging: false
+    throttle_scans: 1                # process every scan (no skipping)
+
+    # Publish map→odom TF at 50 Hz — keeps RViz and Nav2 responsive.
+    transform_publish_period: 0.02
+
+    # Redraw the /map OccupancyGrid every 1 s (default: 5 s → visible lag).
+    map_update_interval: 1.0
+
+    resolution: 0.05                 # 5 cm/cell — matches Nav2 costmap resolution
+    restamp_tf: false
+
+    min_laser_range: 0.1             # ignore zero-range returns
+    max_laser_range: 10.0            # Sambot LiDAR effective range
+
+    # Minimum sim-time gap between processed scans (seconds).
+    # 0.2 s (5 scans/s) is tighter than the default 0.5 s, giving smoother
+    # scan matching in slow-moving sim scenarios.
+    minimum_time_interval: 0.2
+
+    # Increase transform_timeout for simulation — Gazebo sim-time can stall
+    # briefly, causing TF lookup failures with the default 0.2 s.
+    transform_timeout: 0.5
+
+    tf_buffer_duration: 30.0
+    stack_size_to_use: 40000000
+    enable_interactive_mode: true
+
+    # ── Scan Matching ─────────────────────────────────────────────────────────
+    use_scan_matching: true
+    use_scan_barycenter: true
+
+    # Process a new keyframe after the robot moves ≥ 0.3 m or rotates ≥ 0.3 rad.
+    # Default (0.5 / 0.5) is too coarse for a 7 m room — reduces drift between
+    # keyframes and catches small corrections near obstacles.
+    minimum_travel_distance: 0.3
+    minimum_travel_heading: 0.3
+    check_min_dist_and_heading_precisely: true  # use exact distance, not approx
+
+    scan_buffer_size: 15             # keep more scans for matching (default 10)
+    scan_buffer_maximum_scan_distance: 10.0
+
+    # Raise the fine-match quality threshold to reject weak correlations that
+    # would silently introduce drift (default: 0.1 is too permissive).
+    link_match_minimum_response_fine: 0.3
+    link_scan_maximum_distance: 2.0  # slightly wider than default 1.5 m
+
+    # ── Loop Closure ──────────────────────────────────────────────────────────
+    # Loop closure is the primary defence against accumulated drift.
+    loop_search_maximum_distance: 4.0   # wider search for a 7 m room (default 3 m)
+    do_loop_closing: true
+
+    # Require fewer keyframes to form a loop candidate — helps in small rooms
+    # where the robot returns to origin quickly (default: 10).
+    loop_match_minimum_chain_size: 7
+
+    loop_match_maximum_variance_coarse: 3.0
+    loop_match_minimum_response_coarse: 0.35
+    loop_match_minimum_response_fine: 0.45
+
+    # ── Correlation Search ────────────────────────────────────────────────────
+    correlation_search_space_dimension: 0.5
+    correlation_search_space_resolution: 0.01
+    correlation_search_space_smear_deviation: 0.1
+
+    loop_search_space_dimension: 8.0
+    loop_search_space_resolution: 0.05
+    loop_search_space_smear_deviation: 0.03
+
+    # ── Odometry vs Scan Trust ────────────────────────────────────────────────
+    # Lower penalty = trust the scan matcher more than odometry.
+    # Sim odometry has no wheel slip but sim TF timing can jitter, so lean
+    # slightly towards scan evidence.
+    distance_variance_penalty: 0.3    # default: 0.5
+    angle_variance_penalty: 0.8       # default: 1.0
+
+    fine_search_angle_offset: 0.00349
+    coarse_search_angle_offset: 0.349
+    coarse_angle_resolution: 0.0349
+    minimum_angle_penalty: 0.9
+    minimum_distance_penalty: 0.5
+    use_response_expansion: true
+
+    min_pass_through: 2
+    occupancy_threshold: 0.1

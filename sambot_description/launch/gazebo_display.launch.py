@@ -4,8 +4,9 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import Command, LaunchConfiguration
+from launch.substitutions import Command, LaunchConfiguration, PathJoinSubstitution, PythonExpression
 from launch_ros.actions import Node
+from launch_ros.substitutions import FindPackageShare
 from ros_gz_bridge.actions import RosGzBridge
 from ros_gz_sim.actions import GzServer
 
@@ -15,8 +16,12 @@ def generate_launch_description():
     gz_spawn_model_launch_source = os.path.join(ros_gz_sim_share, "launch", "gz_spawn_model.launch.py")
     default_model_path = os.path.join(pkg_share, 'urdf', 'sambot_odometry_sensors.sdf')
     default_rviz_config_path = os.path.join(pkg_share, 'rviz', 'config.rviz')
-    world_path = os.path.join(pkg_share, 'world', 'my_world.sdf')
     bridge_config_path = os.path.join(pkg_share, 'config', 'bridge_config.yaml')
+
+    # Full path to the chosen world SDF, built at launch time from the 'world' argument.
+    world_path = PathJoinSubstitution([FindPackageShare('sambot_description'), 'world', LaunchConfiguration('world')])
+    # World name passed to gz_spawn_model: filename stem without directory or extension.
+    world_name = PythonExpression(["'", LaunchConfiguration('world'), "'.split('/')[-1].replace('.sdf', '')"])
 
     robot_state_publisher_node = Node(
         package='robot_state_publisher',
@@ -63,7 +68,7 @@ def generate_launch_description():
     spawn_entity = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(gz_spawn_model_launch_source),
         launch_arguments={
-            'world': 'my_world',
+            'world': world_name,
             'topic': '/robot_description',
             'entity_name': 'sambot',
             'z': '0.15',
@@ -81,6 +86,7 @@ def generate_launch_description():
         DeclareLaunchArgument(name='use_sim_time', default_value='True', description='Flag to enable use_sim_time'),
         DeclareLaunchArgument(name='model', default_value=default_model_path, description='Absolute path to robot model file'),
         DeclareLaunchArgument(name='rvizconfig', default_value=default_rviz_config_path, description='Absolute path to rviz config file'),
+        DeclareLaunchArgument(name='world', default_value='my_world.sdf', description='World SDF path relative to sambot_description/world/'),
         ExecuteProcess(cmd=['gz', 'sim', '-g'], output='screen'),
         robot_state_publisher_node,
         gz_server,
