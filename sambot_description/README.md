@@ -182,7 +182,7 @@ ros2 run teleop_twist_keyboard teleop_twist_keyboard \
 
 ```bash
 ros2 launch sambot_description gazebo_display.launch.py \
-  rvizconfig:=/home/abhinandas/ws/robotics/ros2/nav2_ws/src/sambot_pkgs/sambot_description/rviz/sensor_config.rviz
+  rvizconfig:=$(ros2 pkg prefix --share sambot_description)/rviz/sensor_config.rviz
 ```
 
 This brings up the same full simulation stack as the odometry example, with RViz configured to display the LiDAR scan, point cloud, and camera feeds.
@@ -205,24 +205,24 @@ All sensor data is forwarded from Gazebo to ROS via `bridge_config.yaml`:
 
 ---
 
-## Mapping and Localization with Nav2
+## Mapping and Navigation with Nav2
 
-This example runs SLAM-based mapping alongside the Nav2 navigation stack so you can observe the global and local costmaps being built in real time.
+Two workflows are supported: building a map from scratch with SLAM, or navigating in a room that already has a saved map. Each command below runs in its own terminal (source `install/setup.bash` in each).
 
-Each command runs in its own terminal (source `install/setup.bash` in each).
+### Option A — SLAM Mapping (build a new map)
 
-### Terminal 1 — Simulation
+#### Terminal 1 — Simulation (SLAM)
 
 Launch Gazebo with the sensor-equipped robot and open RViz with the sensor layout:
 
 ```bash
 ros2 launch sambot_description gazebo_display.launch.py \
-  rvizconfig:=/home/abhinandas/ws/robotics/ros2/nav2_ws/src/sambot_pkgs/sambot_description/rviz/sensor_config.rviz
+  rvizconfig:=$(ros2 pkg prefix --share sambot_description)/rviz/sensor_config.rviz
 ```
 
 Starts Gazebo, spawns Sambot, brings up the ROS–Gazebo bridge, EKF, and RViz pre-configured to display sensor streams (LiDAR, camera, odometry).
 
-### Terminal 2 — SLAM Toolbox (mapping)
+#### Terminal 2 — SLAM Toolbox
 
 ```bash
 ros2 launch slam_toolbox online_async_launch.py use_sim_time:=true
@@ -230,27 +230,45 @@ ros2 launch slam_toolbox online_async_launch.py use_sim_time:=true
 
 Runs SLAM Toolbox in asynchronous online mode. Subscribes to `/scan` and publishes an incrementally built occupancy grid on `/map`, along with the `map → odom` transform needed by Nav2.
 
-### Terminal 3 — Nav2 Navigation Stack
+#### Terminal 3 — Nav2 Navigation Stack (SLAM)
 
 ```bash
 ros2 launch nav2_bringup navigation_launch.py \
   use_sim_time:=true \
-  params_file:=/home/abhinandas/ws/robotics/ros2/nav2_ws/src/sambot_pkgs/sambot_description/config/nav2_params.yaml
+  params_file:=$(ros2 pkg prefix --share sambot_description)/config/nav2_params.yaml
 ```
 
 Starts the full Nav2 stack (planner, controller, costmap servers, behaviour tree) using the tuned parameters in `config/nav2_params.yaml`. The **global costmap** inflates obstacles on the SLAM map for path planning; the **local costmap** uses live sensor data for reactive obstacle avoidance.
 
-### What to observe in RViz
+Once mapping is complete, save it with `nav2_map_server`'s `map_saver_cli` (see [world/README.md](world/README.md)).
 
-Add the following displays to watch the costmaps:
+### Option B — Navigating with a Saved Map (AMCL localization)
 
-| Display | Topic |
-| --- | --- |
-| Map | `/map` |
-| Global costmap | `/global_costmap/costmap` |
-| Local costmap | `/local_costmap/costmap` |
+Use this once a map already exists, e.g. the `room_with_walls` world and its saved map at
+`world/room_with_walls/maps/square_room_map.yaml`.
 
-Once all three stacks are running, use the **Nav2 Goal** tool in RViz to send a navigation goal and watch the planner generate a path through the global costmap while the controller tracks it using the local costmap.
+#### Terminal 1 — Simulation (room_with_walls)
+
+```bash
+ros2 launch sambot_description gazebo_display.launch.py \
+  world:=room_with_walls/square_room.sdf \
+  rvizconfig:=$(ros2 pkg prefix --share sambot_description)/rviz/navigation.rviz
+```
+
+`world` is given relative to `sambot_description/world/`. This starts Gazebo, spawns Sambot in the `room_with_walls` world, and opens RViz with `rviz/navigation.rviz` — pre-configured with **Map**, **Global Costmap**, and **Local Costmap** displays (subscribed to `/map`, `/global_costmap/costmap`, `/local_costmap/costmap`) using **Transient Local** durability, matching `map_server`'s latched publish. This is required for the map to appear at all, since these topics are published once and RViz must connect with a compatible QoS to receive them.
+
+#### Terminal 2 — Nav2 Bringup (map server + AMCL + navigation stack)
+
+```bash
+ros2 launch nav2_bringup bringup_launch.py \
+  use_sim_time:=true \
+  map:=$(ros2 pkg prefix --share sambot_description)/world/room_with_walls/maps/square_room_map.yaml \
+  params_file:=$(ros2 pkg prefix --share sambot_description)/config/nav2_params.yaml
+```
+
+Starts `map_server` (loading the map above), `amcl` for localization, and the full navigation stack. `bringup_launch.py` does **not** launch RViz itself — RViz is already running from Terminal 1.
+
+Once all terminals are running, use the **Nav2 Goal** tool in RViz to send a navigation goal and watch the planner generate a path through the global costmap while the controller tracks it using the local costmap.
 
 ---
 
