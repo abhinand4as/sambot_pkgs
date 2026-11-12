@@ -1,0 +1,167 @@
+#usda 1.0
+(
+    customLayerData = {
+        string creator = "URDF USD Converter v0.1.3"
+    }
+    defaultPrim = "sambot"
+    doc = """Generated from Composed Stage of root layer /tmp/tmp_perl612/sambot.usdc
+
+
+Generated from Composed Stage of root layer /tmp/urdf_import_sambot_qoqr5gjq/usdex_sambot/sambot.usdc
+
+
+Generated from Composed Stage of root layer /tmp/urdf_import_sambot_qoqr5gjq/temp_sambot/sambot.usd
+
+
+Generated from Composed Stage of root layer /home/abhinandas/ws/robotics/ros2/nav2_ws/src/sambot_pkgs/sambot_isaac/usd/sambot/payloads/base.usd
+"""
+    kilogramsPerUnit = 1
+    metersPerUnit = 1
+    subLayers = [
+        @./physics.usda@
+    ]
+    upAxis = "Z"
+)
+
+over "sambot"
+{
+    over "Physics"
+    {
+        def MjcActuator "drivewhl_l_joint_actuator"
+        {
+            uniform double[] mjc:biasPrm = [0, 0, -17.453292846679688, 0, 0, 0, 0, 0, 0, 0]
+            uniform token mjc:biasType = "affine"
+            uniform double mjc:forceRange:max = inf
+            uniform double mjc:forceRange:min = -inf
+            uniform double[] mjc:gainPrm = [17.453292846679688, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+            uniform token mjc:gainType = "fixed"
+            custom rel mjc:target
+            prepend rel mjc:target = </sambot/Physics/drivewhl_l_joint>
+        }
+
+        def MjcActuator "drivewhl_r_joint_actuator"
+        {
+            uniform double[] mjc:biasPrm = [0, 0, -17.453292846679688, 0, 0, 0, 0, 0, 0, 0]
+            uniform token mjc:biasType = "affine"
+            uniform double mjc:forceRange:max = inf
+            uniform double mjc:forceRange:min = -inf
+            uniform double[] mjc:gainPrm = [17.453292846679688, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+            uniform token mjc:gainType = "fixed"
+            custom rel mjc:target
+            prepend rel mjc:target = </sambot/Physics/drivewhl_r_joint>
+        }
+
+        over "base_joint"
+        {
+        }
+
+        over "drivewhl_l_joint" (
+            delete apiSchemas = ["PhysicsDriveAPI:angular", "PhysicsJointStateAPI:angular"]
+        )
+        {
+        }
+
+        over "drivewhl_r_joint" (
+            delete apiSchemas = ["PhysicsDriveAPI:angular", "PhysicsJointStateAPI:angular"]
+        )
+        {
+        }
+
+        over "caster_joint"
+        {
+        }
+
+        over "lidar_joint"
+        {
+        }
+
+        over "camera_joint"
+        {
+        }
+    }
+
+    over "Geometry"
+    {
+        over "base_link"
+        {
+            over "drivewhl_l_link"
+            {
+                over "cylinder"
+                {
+                }
+
+                over "cylinder_1"
+                {
+                }
+            }
+
+            over "drivewhl_r_link"
+            {
+                over "cylinder"
+                {
+                }
+
+                over "cylinder_1"
+                {
+                }
+            }
+
+            over "front_caster"
+            {
+                over "sphere"
+                {
+                }
+
+                over "sphere_1"
+                {
+                }
+            }
+
+            over "base_footprint"
+            {
+            }
+
+            over "lidar_link"
+            {
+                over "cylinder"
+                {
+                }
+
+                over "cylinder_1"
+                {
+                }
+            }
+
+            over "camera_link"
+            {
+                over "box"
+                {
+                }
+
+                over "box_1"
+                {
+                }
+            }
+
+            over "box"
+            {
+            }
+
+            over "box_1"
+            {
+            }
+        }
+    }
+
+    over "Materials"
+    {
+        over "Cyan"
+        {
+        }
+
+        over "Gray"
+        {
+        }
+    }
+}
+
