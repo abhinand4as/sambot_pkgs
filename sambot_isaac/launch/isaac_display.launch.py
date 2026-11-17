@@ -37,6 +37,8 @@ def _isaac_process(context):
     world = LaunchConfiguration('world').perform(context)
     if world:
         cmd += ['--world', world]
+    if LaunchConfiguration('camera').perform(context).lower() != 'true':
+        cmd.append('--no-camera')
     return [ExecuteProcess(cmd=cmd, env=env, output='screen', name='isaac_sim')]
 
 
@@ -76,6 +78,16 @@ def generate_launch_description():
         output='screen',
         parameters=[{'use_sim_time': use_sim_time}],
     )
+    # Isaac publishes camera data in the optical convention (z forward, x right, y down)
+    camera_optical_tf_node = Node(
+        package='tf2_ros',
+        executable='static_transform_publisher',
+        name='camera_optical_tf',
+        arguments=['--frame-id', 'camera_link', '--child-frame-id', 'camera_optical_frame',
+                   '--roll', '-1.5707963', '--yaw', '-1.5707963'],
+        parameters=[{'use_sim_time': use_sim_time}],
+        condition=IfCondition(LaunchConfiguration('camera')),
+    )
     rviz_node = Node(
         package='rviz2',
         executable='rviz2',
@@ -95,6 +107,8 @@ def generate_launch_description():
                               description='Absolute path to rviz config file'),
         DeclareLaunchArgument('rviz', default_value='True', description='Start RViz'),
         DeclareLaunchArgument('headless', default_value='False', description='Run Isaac Sim without a window'),
+        DeclareLaunchArgument('camera', default_value='True',
+                              description='Simulate the RGBD camera (/depth_camera/*)'),
         DeclareLaunchArgument('world', default_value='',
                               description='World USD (default: sambot_isaac usd/worlds/square_room.usda)'),
         DeclareLaunchArgument('isaac_sim_path', default_value='~/apps/robotics/isaacsim',
@@ -103,5 +117,6 @@ def generate_launch_description():
         robot_state_publisher_node,
         robot_localization_node,
         cmd_vel_relay_node,
+        camera_optical_tf_node,
         rviz_node,
     ])

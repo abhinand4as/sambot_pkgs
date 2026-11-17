@@ -10,7 +10,7 @@ install(PROGRAMS scripts/cmd_vel_relay.py
 
 # Isaac-side scripts run inside Isaac's own Python, so they are installed as data.
 install(
-  DIRECTORY usd urdf scripts launch
+  DIRECTORY config usd urdf scripts launch
   DESTINATION share/${PROJECT_NAME}
 )
 

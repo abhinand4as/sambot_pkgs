@@ -10,18 +10,26 @@ Subscribed (ROS 2): /isaac/cmd_vel (Twist; fed from /demo/cmd_vel by cmd_vel_rel
 No /tf is published: robot_state_publisher + the EKF own the TF tree, as in Gazebo.
 """
 import argparse
+import math
 import os
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--headless", action="store_true")
 parser.add_argument("--world", default=None, help="world USD (default: usd/worlds/square_room.usda)")
 parser.add_argument("--no-lidar", action="store_true")
+parser.add_argument("--no-camera", action="store_true")
 parser.add_argument("--debug-poses", action="store_true", help="print rigid-body world poses every 2 s")
+parser.add_argument("--experience", default=None,
+                    help="Kit app file (default: isaacsim.exp.full.kit with GUI, the lean python kit headless)")
 args, _ = parser.parse_known_args()
 
 from isaacsim import SimulationApp  # noqa: E402
 
-simulation_app = SimulationApp({"headless": args.headless})
+# SimulationApp's default kit has no graph editors and few menus; the GUI loads the full app.
+experience = args.experience
+if experience is None and not args.headless:
+    experience = os.path.join(os.environ["EXP_PATH"], "isaacsim.exp.full.kit")
+simulation_app = SimulationApp({"headless": args.headless}, experience=experience or "")
 
 import isaacsim.core.experimental.utils.app as app_utils  # noqa: E402
 import omni.graph.core as og  # noqa: E402
@@ -43,6 +51,7 @@ WHEEL_SEPARATION = 0.36
 ROBOT = "/World/sambot"
 BASE_LINK = f"{ROBOT}/Geometry/base_link"
 LIDAR_LINK = f"{BASE_LINK}/lidar_link"
+CAMERA_LINK = f"{BASE_LINK}/camera_link"
 
 omni.usd.get_context().new_stage()
 stage = omni.usd.get_context().get_stage()
@@ -219,6 +228,51 @@ og.Controller.edit(
     },
 )
 simulation_app.update()
+
+# ---- RGBD camera -> /depth_camera/{image_raw,camera_info,points} -------------------
+# Mirrors the SDF rgbd_camera: 640x480, 60 deg HFOV, clip 0.05-3 m, 5 Hz. Isaac publishes in
+# the optical convention (z forward), hence frame camera_optical_frame (static TF in the launch).
+if not args.no_camera:
+    print("[run_sim] RGBD camera", flush=True)
+    CAM_W, CAM_H, CAM_HFOV, CAM_HZ = 640, 480, math.radians(60), 5
+    focal = 24.0  # mm; the apertures set the FOV
+    cam = UsdGeom.Camera.Define(stage, f"{CAMERA_LINK}/rgbd")
+    cam.GetFocalLengthAttr().Set(focal)
+    cam.GetHorizontalApertureAttr().Set(2 * focal * math.tan(CAM_HFOV / 2))
+    cam.GetVerticalApertureAttr().Set(2 * focal * math.tan(CAM_HFOV / 2) * CAM_H / CAM_W)
+    cam.GetClippingRangeAttr().Set(Gf.Vec2f(0.05, 3.0))
+    # USD cameras look down -Z with +Y up; turn that into camera_link's x forward, z up
+    UsdGeom.XformCommonAPI(cam).SetRotate(Gf.Vec3f(90, 0, -90), UsdGeom.XformCommonAPI.RotationOrderXYZ)
+    # Publish rate (the helpers' frameSkipCount is deprecated and ignored for depth_pcl)
+    cam.GetPrim().ApplyAPI("OmniSensorAPI")
+    cam.GetPrim().GetAttribute("omni:sensor:tickRate").Set(float(CAM_HZ))
+
+    og.Controller.edit(
+        {"graph_path": "/World/CameraGraph", "evaluator_name": "execution"},
+        {
+            keys.CREATE_NODES: [
+                ("Tick", "omni.graph.action.OnPlaybackTick"),
+                ("Render", "isaacsim.core.nodes.IsaacCreateRenderProduct"),
+                ("Rgb", "isaacsim.ros2.bridge.ROS2CameraHelper"),
+                ("Info", "isaacsim.ros2.bridge.ROS2CameraInfoHelper"),
+                ("Points", "isaacsim.ros2.bridge.ROS2CameraHelper"),
+            ],
+            keys.SET_VALUES: [
+                ("Render.inputs:cameraPrim", [usdrt.Sdf.Path(f"{CAMERA_LINK}/rgbd")]),
+                ("Render.inputs:width", CAM_W),
+                ("Render.inputs:height", CAM_H),
+                ("Rgb.inputs:type", "rgb"),
+                ("Rgb.inputs:topicName", "/depth_camera/image_raw"),
+                ("Info.inputs:topicName", "/depth_camera/camera_info"),
+                ("Points.inputs:type", "depth_pcl"),
+                ("Points.inputs:topicName", "/depth_camera/points"),
+            ] + [(f"{n}.inputs:frameId", "camera_optical_frame") for n in ("Rgb", "Info", "Points")],
+            keys.CONNECT: [("Tick.outputs:tick", "Render.inputs:execIn")]
+            + [(f"Render.outputs:{o}", f"{n}.inputs:{i}") for n in ("Rgb", "Info", "Points")
+               for o, i in (("execOut", "execIn"), ("renderProductPath", "renderProductPath"))],
+        },
+    )
+    simulation_app.update()
 
 print("[run_sim] play", flush=True)
 app_utils.play()
